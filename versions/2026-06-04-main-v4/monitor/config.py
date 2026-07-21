@@ -1,0 +1,277 @@
+import json
+from pathlib import Path
+
+# Push settings
+PUSHPLUS_TOKEN = ""
+PUSHPLUS_TOPIC = "1"
+PUSHPLUS_TITLE = "Warming"
+WEBHOOK_URL = ""
+
+# RSSI threshold
+DEFAULT_RSSI_THRESHOLD = 66
+RSSI_THRESHOLD_FILE = Path("rssi_threshold.json")
+RSSI_THRESHOLD: int = DEFAULT_RSSI_THRESHOLD
+
+
+def _normalize_threshold(value: int) -> int:
+    value_int = int(value)
+    return max(1, value_int)
+
+
+def _load_rssi_threshold() -> int:
+    try:
+        if RSSI_THRESHOLD_FILE.exists():
+            raw = json.loads(RSSI_THRESHOLD_FILE.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                raw = raw.get("rssi_threshold", raw.get("threshold", raw))
+            if isinstance(raw, (int, float, str)):
+                return _normalize_threshold(raw)
+    except Exception as exc:
+        print(f"[WARN] 加载 RSSI 阈值失败：{exc}")
+    return DEFAULT_RSSI_THRESHOLD
+
+
+def set_rssi_threshold(value: int) -> int:
+    global RSSI_THRESHOLD
+    normalized = _normalize_threshold(value)
+    RSSI_THRESHOLD = normalized
+    try:
+        RSSI_THRESHOLD_FILE.write_text(
+            json.dumps({"rssi_threshold": normalized}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        print(f"[WARN] 无法保存 RSSI 阈值：{exc}")
+    return RSSI_THRESHOLD
+
+
+RSSI_THRESHOLD = _load_rssi_threshold()
+
+# Monitor/web settings
+SETTINGS_FILE = Path("monitor_settings.json")
+DEFAULT_STATUS_NOTIFY_ENABLED = True
+DEFAULT_EXIT_NOTIFY_ENABLED = True
+DEFAULT_PUSH_NOTIFY_ENABLED = True
+DEFAULT_BEEP_ON_EVENT = False
+DEFAULT_CHART_MAX_POINTS = 60
+DEFAULT_CHART_Y_RANGE_DB = 90
+DEFAULT_CHART_Y_MIN_DB = 0
+DEFAULT_ARPING_WARN_THRESHOLD = 10
+DEFAULT_ARPING_EMERGENCY_THRESHOLD = 20
+
+STATUS_NOTIFY_ENABLED = DEFAULT_STATUS_NOTIFY_ENABLED
+EXIT_NOTIFY_ENABLED = DEFAULT_EXIT_NOTIFY_ENABLED
+PUSH_NOTIFY_ENABLED = DEFAULT_PUSH_NOTIFY_ENABLED
+BEEP_ON_EVENT = DEFAULT_BEEP_ON_EVENT
+CHART_MAX_POINTS = DEFAULT_CHART_MAX_POINTS
+CHART_Y_RANGE_DB = DEFAULT_CHART_Y_RANGE_DB
+CHART_Y_MIN_DB = DEFAULT_CHART_Y_MIN_DB
+ARPING_WARN_THRESHOLD = DEFAULT_ARPING_WARN_THRESHOLD
+ARPING_EMERGENCY_THRESHOLD = DEFAULT_ARPING_EMERGENCY_THRESHOLD
+
+
+def _load_monitor_settings() -> dict:
+    if not SETTINGS_FILE.exists():
+        return {}
+    try:
+        raw = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+        return raw if isinstance(raw, dict) else {}
+    except Exception as exc:
+        print(f"[WARN] 加载监控设置失败：{exc}")
+        return {}
+
+
+def _normalize_bool(value, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() in {"1", "true", "yes", "on"}
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
+
+
+def _apply_monitor_settings(data: dict) -> None:
+    global STATUS_NOTIFY_ENABLED, EXIT_NOTIFY_ENABLED, PUSH_NOTIFY_ENABLED, BEEP_ON_EVENT, CHART_MAX_POINTS, CHART_Y_RANGE_DB, CHART_Y_MIN_DB
+    global ARPING_WARN_THRESHOLD, ARPING_EMERGENCY_THRESHOLD
+    global TARGET_MAC, TARGET_NAME_CONTAINS
+    STATUS_NOTIFY_ENABLED = _normalize_bool(data.get("status_notify_enabled"), STATUS_NOTIFY_ENABLED)
+    EXIT_NOTIFY_ENABLED = _normalize_bool(data.get("exit_notify_enabled"), EXIT_NOTIFY_ENABLED)
+    PUSH_NOTIFY_ENABLED = _normalize_bool(data.get("push_notify_enabled"), PUSH_NOTIFY_ENABLED)
+    BEEP_ON_EVENT = _normalize_bool(data.get("beep_on_event"), BEEP_ON_EVENT)
+    try:
+        CHART_MAX_POINTS = max(1, int(data.get("chart_max_points", CHART_MAX_POINTS)))
+    except Exception:
+        CHART_MAX_POINTS = DEFAULT_CHART_MAX_POINTS
+    try:
+        CHART_Y_RANGE_DB = max(1, int(data.get("chart_y_range_db", CHART_Y_RANGE_DB)))
+    except Exception:
+        CHART_Y_RANGE_DB = DEFAULT_CHART_Y_RANGE_DB
+    try:
+        CHART_Y_MIN_DB = max(0, int(data.get("chart_y_min_db", CHART_Y_MIN_DB)))
+    except Exception:
+        CHART_Y_MIN_DB = DEFAULT_CHART_Y_MIN_DB
+    try:
+        ARPING_WARN_THRESHOLD = max(1, int(data.get("arping_warn_threshold", ARPING_WARN_THRESHOLD)))
+    except Exception:
+        ARPING_WARN_THRESHOLD = DEFAULT_ARPING_WARN_THRESHOLD
+    try:
+        ARPING_EMERGENCY_THRESHOLD = max(1, int(data.get("arping_emergency_threshold", ARPING_EMERGENCY_THRESHOLD)))
+    except Exception:
+        ARPING_EMERGENCY_THRESHOLD = DEFAULT_ARPING_EMERGENCY_THRESHOLD
+    if ARPING_EMERGENCY_THRESHOLD < ARPING_WARN_THRESHOLD:
+        ARPING_EMERGENCY_THRESHOLD = ARPING_WARN_THRESHOLD
+    if "target_mac" in data:
+        TARGET_MAC = str(data.get("target_mac") or "").strip()
+    if "target_name_contains" in data:
+        TARGET_NAME_CONTAINS = str(data.get("target_name_contains") or "").strip()
+
+
+def save_monitor_settings() -> None:
+    data = {
+        "status_notify_enabled": STATUS_NOTIFY_ENABLED,
+        "exit_notify_enabled": EXIT_NOTIFY_ENABLED,
+        "push_notify_enabled": PUSH_NOTIFY_ENABLED,
+        "beep_on_event": BEEP_ON_EVENT,
+        "chart_max_points": CHART_MAX_POINTS,
+        "chart_y_range_db": CHART_Y_RANGE_DB,
+        "chart_y_min_db": CHART_Y_MIN_DB,
+        "arping_warn_threshold": ARPING_WARN_THRESHOLD,
+        "arping_emergency_threshold": ARPING_EMERGENCY_THRESHOLD,
+        "target_mac": TARGET_MAC,
+        "target_name_contains": TARGET_NAME_CONTAINS,
+    }
+    try:
+        SETTINGS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as exc:
+        print(f"[WARN] 无法保存监控设置：{exc}")
+
+
+def set_monitor_settings(
+    *,
+    status_notify_enabled: bool | None = None,
+    exit_notify_enabled: bool | None = None,
+    push_notify_enabled: bool | None = None,
+    beep_on_event: bool | None = None,
+    chart_max_points: int | None = None,
+    chart_y_range_db: int | None = None,
+    chart_y_min_db: int | None = None,
+    arping_warn_threshold: int | None = None,
+    arping_emergency_threshold: int | None = None,
+    target_mac: str | None = None,
+    target_name_contains: str | None = None,
+) -> dict:
+    if status_notify_enabled is not None:
+        globals()["STATUS_NOTIFY_ENABLED"] = _normalize_bool(status_notify_enabled, STATUS_NOTIFY_ENABLED)
+    if exit_notify_enabled is not None:
+        globals()["EXIT_NOTIFY_ENABLED"] = _normalize_bool(exit_notify_enabled, EXIT_NOTIFY_ENABLED)
+    if push_notify_enabled is not None:
+        globals()["PUSH_NOTIFY_ENABLED"] = _normalize_bool(push_notify_enabled, PUSH_NOTIFY_ENABLED)
+    if beep_on_event is not None:
+        globals()["BEEP_ON_EVENT"] = _normalize_bool(beep_on_event, BEEP_ON_EVENT)
+    if chart_max_points is not None:
+        try:
+            globals()["CHART_MAX_POINTS"] = max(1, int(chart_max_points))
+        except Exception:
+            globals()["CHART_MAX_POINTS"] = DEFAULT_CHART_MAX_POINTS
+    if chart_y_range_db is not None:
+        try:
+            globals()["CHART_Y_RANGE_DB"] = max(1, int(chart_y_range_db))
+        except Exception:
+            globals()["CHART_Y_RANGE_DB"] = DEFAULT_CHART_Y_RANGE_DB
+    if chart_y_min_db is not None:
+        try:
+            globals()["CHART_Y_MIN_DB"] = max(0, int(chart_y_min_db))
+        except Exception:
+            globals()["CHART_Y_MIN_DB"] = DEFAULT_CHART_Y_MIN_DB
+    if arping_warn_threshold is not None:
+        try:
+            globals()["ARPING_WARN_THRESHOLD"] = max(1, int(arping_warn_threshold))
+        except Exception:
+            globals()["ARPING_WARN_THRESHOLD"] = DEFAULT_ARPING_WARN_THRESHOLD
+    if arping_emergency_threshold is not None:
+        try:
+            globals()["ARPING_EMERGENCY_THRESHOLD"] = max(1, int(arping_emergency_threshold))
+        except Exception:
+            globals()["ARPING_EMERGENCY_THRESHOLD"] = DEFAULT_ARPING_EMERGENCY_THRESHOLD
+    if globals()["ARPING_EMERGENCY_THRESHOLD"] < globals()["ARPING_WARN_THRESHOLD"]:
+        globals()["ARPING_EMERGENCY_THRESHOLD"] = globals()["ARPING_WARN_THRESHOLD"]
+    if target_mac is not None:
+        globals()["TARGET_MAC"] = str(target_mac).strip()
+    if target_name_contains is not None:
+        globals()["TARGET_NAME_CONTAINS"] = str(target_name_contains).strip()
+    save_monitor_settings()
+    return get_monitor_settings()
+
+
+def get_monitor_settings() -> dict:
+    return {
+        "status_notify_enabled": STATUS_NOTIFY_ENABLED,
+        "exit_notify_enabled": EXIT_NOTIFY_ENABLED,
+        "push_notify_enabled": PUSH_NOTIFY_ENABLED,
+        "beep_on_event": BEEP_ON_EVENT,
+        "chart_max_points": CHART_MAX_POINTS,
+        "chart_y_range_db": CHART_Y_RANGE_DB,
+        "chart_y_min_db": CHART_Y_MIN_DB,
+        "arping_warn_threshold": ARPING_WARN_THRESHOLD,
+        "arping_emergency_threshold": ARPING_EMERGENCY_THRESHOLD,
+        "target_mac": TARGET_MAC,
+        "target_name_contains": TARGET_NAME_CONTAINS,
+        "chart_max_points_default": DEFAULT_CHART_MAX_POINTS,
+        "chart_y_range_db_default": DEFAULT_CHART_Y_RANGE_DB,
+        "chart_y_min_db_default": DEFAULT_CHART_Y_MIN_DB,
+        "arping_warn_threshold_default": DEFAULT_ARPING_WARN_THRESHOLD,
+        "arping_emergency_threshold_default": DEFAULT_ARPING_EMERGENCY_THRESHOLD,
+        "target_mac_default": DEFAULT_TARGET_MAC,
+        "target_name_contains_default": DEFAULT_TARGET_NAME_CONTAINS,
+    }
+
+# File paths
+COOKIE_FILE = Path("cookie.txt")
+STATE_FILE = Path("zte_clients_state.json")
+EVENT_LOG = Path("target_events.log")
+TARGET_HISTORY_FILE = Path("target_history.json")
+STATUS_LOG = Path("target_status.log")
+
+# Router login
+ROUTER_BASE_URL = "http://192.168.1.1"
+ROUTER_USERNAME = ""
+ROUTER_PASSWORD = ""
+
+# Router fetch config
+URL = "http://192.168.5.1/?_type=vueData&_tag=vue_topo_data&Action=GetALLClients"
+EXTRA_HEADERS = {}
+SAVE_RAW = False
+
+# Scanning behavior
+WATCH = True
+INTERVAL = 1
+DYNAMIC_INTERVAL_MIN_SECONDS = 1
+DYNAMIC_INTERVAL_MAX_SECONDS = 6
+DYNAMIC_INTERVAL_WINDOW_SECONDS = 60
+DYNAMIC_INTERVAL_MAX_DOWNS = 5
+
+# Targets
+DEFAULT_TARGET_MAC = ""
+DEFAULT_TARGET_IP = ""
+DEFAULT_TARGET_NAME_CONTAINS = ""
+
+TARGET_MAC = DEFAULT_TARGET_MAC
+TARGET_IP = DEFAULT_TARGET_IP
+TARGET_NAME_CONTAINS = DEFAULT_TARGET_NAME_CONTAINS
+SECOND_TARGET_MAC = ""
+SECOND_TARGET_IP = ""
+SECOND_TARGET_NAME_CONTAINS = ""
+
+# ARP warm-up before fetch
+ARPING_BEFORE_FETCH = True
+
+# History/web
+TARGET_HISTORY_RETENTION_DAYS = 30
+HISTORY_RECENT_DAYS = 1
+HISTORY_MAX_SNAPSHOT = 0
+HISTORY_SAVE_INTERVAL_SECONDS = 10
+ENABLE_HISTORY_WEB = True
+HISTORY_WEB_PORT = 8080
+
+_apply_monitor_settings(_load_monitor_settings())

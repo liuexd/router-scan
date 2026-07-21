@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+rssi_threshold.json
+zte_clients_state.json
+target_events.log
+target_history.json
+target_status.log
