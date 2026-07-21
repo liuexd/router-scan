@@ -1,0 +1,16 @@
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.idea/
+
+# Local credentials and runtime state
+cookie.txt
+monitor_settings.json
+rssi_threshold.json
+zte_clients_state.json
+target_history.json
+target_events.log
+target_status.log
+*.log
+
