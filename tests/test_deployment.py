@@ -86,6 +86,30 @@ class DeploymentTests(unittest.TestCase):
             with self.assertRaisesRegex(PermissionError, "退避期"):
                 zte._login("http://example", {})
 
+    def test_cli_can_reauthenticate_from_service_working_directory(self):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), ZteRouter)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                working_directory = root / "service-working-directory"
+                working_directory.mkdir()
+                base = f"http://127.0.0.1:{server.server_port}"
+                (root / "monitor_settings.json").write_text(json.dumps({"router_base_url": base}))
+                (root / "zte_credentials.json").write_text(json.dumps({
+                    "base_url": base, "username": "", "password": "example-password"}))
+                result = subprocess.run([sys.executable, str(ROOT / "main.py"), "--config-dir",
+                    directory, "--backend", "zte", "--check"], cwd=working_directory,
+                    capture_output=True, text=True, encoding="utf-8")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(json.loads(result.stdout)["device_count"], 1)
+                self.assertTrue((root / "runtime" / "zte_session.json").exists())
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
     def test_setup_does_not_require_editing_source(self):
         with tempfile.TemporaryDirectory() as directory, patch("builtins.input", side_effect=[
                 "http://192.168.1.1:8090", "", "127.0.0.1", "runtime", ""]), patch(
