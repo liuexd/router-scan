@@ -1,6 +1,9 @@
+from __future__ import annotations
 """
 Router monitor package: scanning, notifications, history service, and CLI orchestration.
 """
 
-from .app import main  # noqa: F401
+def main():
+    from .app import main as run
+    run()
 

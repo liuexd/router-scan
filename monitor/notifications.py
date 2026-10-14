@@ -1,12 +1,12 @@
-import requests
-
+from __future__ import annotations
 from . import config
 from .utils import ts
 
 
 def send_pushplus_notification(content: str) -> None:
-    if not config.PUSH_NOTIFY_ENABLED:
+    if not config.PUSH_NOTIFY_ENABLED or not config.PUSHPLUS_TOKEN:
         return
+    import requests
     params = {
         "token": config.PUSHPLUS_TOKEN,
         "title": config.PUSHPLUS_TITLE,
@@ -20,8 +20,9 @@ def send_pushplus_notification(content: str) -> None:
 
 
 def send_webhook_notification(text: str) -> None:
-    if not config.PUSH_NOTIFY_ENABLED:
+    if not config.PUSH_NOTIFY_ENABLED or not config.WEBHOOK_URL:
         return
+    import requests
     payload = {"msgtype": "text", "text": {"content": text}}
     try:
         requests.post(config.WEBHOOK_URL, json=payload, timeout=10)

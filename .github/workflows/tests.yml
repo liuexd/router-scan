@@ -1,0 +1,25 @@
+name: Tests
+on:
+  push:
+  pull_request:
+jobs:
+  python:
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: '1'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.9', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m unittest discover -s tests -v
+      - name: Check shell syntax
+        if: runner.os == 'Linux'
+        run: |
+          sh -n deploy/install-openwrt.sh
+          sh -n deploy/uninstall-openwrt.sh
+          sh -n deploy/router-scan.init

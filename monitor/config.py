@@ -1,5 +1,25 @@
+from __future__ import annotations
 import json
+import os
 from pathlib import Path
+
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+CONFIG_DIR = Path(os.environ.get("ROUTER_SCAN_CONFIG_DIR", PROJECT_DIR)).resolve()
+DEPLOYMENT_FILE = CONFIG_DIR / "deployment.json"
+_deployment = json.loads(DEPLOYMENT_FILE.read_text(encoding="utf-8")) if DEPLOYMENT_FILE.exists() else {}
+if not isinstance(_deployment, dict):
+    raise ValueError("deployment.json 必须是 JSON 对象")
+ROUTER_BACKEND = os.environ.get("ROUTER_SCAN_BACKEND", _deployment.get("backend", "zte"))
+if ROUTER_BACKEND not in {"zte", "openwrt"}:
+    raise ValueError("采集模式必须为 zte 或 openwrt")
+WEB_BIND = os.environ.get("ROUTER_SCAN_WEB_BIND", _deployment.get("web_bind", "127.0.0.1"))
+TLS_VERIFY = _deployment.get("tls_verify", True)
+if not isinstance(TLS_VERIFY, bool):
+    raise ValueError("tls_verify 必须是布尔值")
+HTTP_TIMEOUT = float(_deployment.get("http_timeout", 6))
+if not 0 < HTTP_TIMEOUT <= 120:
+    raise ValueError("http_timeout 必须大于 0 且不超过 120 秒")
+CREDENTIALS_FILE = CONFIG_DIR / "zte_credentials.json"
 
 # Push settings
 PUSHPLUS_TOKEN = ""
@@ -9,7 +29,7 @@ WEBHOOK_URL = ""
 
 # RSSI threshold
 DEFAULT_RSSI_THRESHOLD = 66
-RSSI_THRESHOLD_FILE = Path("rssi_threshold.json")
+RSSI_THRESHOLD_FILE = CONFIG_DIR / "rssi_threshold.json"
 RSSI_THRESHOLD: int = DEFAULT_RSSI_THRESHOLD
 
 
@@ -48,11 +68,11 @@ def set_rssi_threshold(value: int) -> int:
 RSSI_THRESHOLD = _load_rssi_threshold()
 
 # Monitor/web settings
-SETTINGS_FILE = Path("monitor_settings.json")
+SETTINGS_FILE = CONFIG_DIR / "monitor_settings.json"
 DEFAULT_STATUS_NOTIFY_ENABLED = True
 DEFAULT_SUSPECT_NOTIFY_ENABLED = True
 DEFAULT_EXIT_NOTIFY_ENABLED = True
-DEFAULT_PUSH_NOTIFY_ENABLED = True
+DEFAULT_PUSH_NOTIFY_ENABLED = False
 DEFAULT_BEEP_ON_EVENT = False
 DEFAULT_CHART_MAX_POINTS = 60
 DEFAULT_CHART_Y_RANGE_DB = 90
@@ -105,11 +125,18 @@ def _normalize_positive_int(value, default: int, minimum: int = 1) -> int:
 
 
 def _normalize_base_url(url: str | None) -> str:
+    from urllib.parse import urlsplit
     raw = (url or "").strip()
     if not raw:
         raw = DEFAULT_ROUTER_BASE_URL
     if not raw.startswith("http"):
         raw = f"http://{raw}"
+    parsed = urlsplit(raw)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("路由器地址必须包含 http/https 和主机")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in {"", "/"}:
+        raise ValueError("路由器地址只填写协议、主机和端口，不要包含账号、路径或 #/")
+    parsed.port  # validate malformed port numbers
     return raw.rstrip("/")
 
 
@@ -282,6 +309,16 @@ STATE_FILE = Path("zte_clients_state.json")
 EVENT_LOG = Path("target_events.log")
 TARGET_HISTORY_FILE = Path("target_history.json")
 STATUS_LOG = Path("target_status.log")
+_runtime_dir = os.environ.get("ROUTER_SCAN_RUNTIME_DIR", _deployment.get("runtime_dir", "runtime"))
+_runtime_path = Path(_runtime_dir)
+if not _runtime_path.is_absolute():
+    _runtime_path = CONFIG_DIR / _runtime_path
+_runtime_path.mkdir(parents=True, exist_ok=True)
+STATE_FILE = _runtime_path / STATE_FILE.name
+EVENT_LOG = _runtime_path / EVENT_LOG.name
+TARGET_HISTORY_FILE = _runtime_path / TARGET_HISTORY_FILE.name
+STATUS_LOG = _runtime_path / STATUS_LOG.name
+COOKIE_FILE = CONFIG_DIR / COOKIE_FILE.name
 
 # Router login
 ROUTER_USERNAME = ""
@@ -300,7 +337,7 @@ DYNAMIC_INTERVAL_MAX_SECONDS = 5
 # Targets
 DEFAULT_TARGET_MAC = ""
 DEFAULT_TARGET_IP = ""
-DEFAULT_TARGET_NAME_CONTAINS = "FOA-AL00"
+DEFAULT_TARGET_NAME_CONTAINS = ""
 
 TARGET_MAC = DEFAULT_TARGET_MAC
 TARGET_IP = DEFAULT_TARGET_IP
@@ -317,10 +354,17 @@ TRAFFIC_ACTIVE_MIN_BPS = 0
 
 # History/web
 TARGET_HISTORY_RETENTION_DAYS = 30
+if ROUTER_BACKEND == "openwrt" or _runtime_dir:
+    TARGET_HISTORY_RETENTION_DAYS = 1
 HISTORY_RECENT_DAYS = 1
 HISTORY_MAX_SNAPSHOT = 0
 HISTORY_SAVE_INTERVAL_SECONDS = 10
 ENABLE_HISTORY_WEB = True
-HISTORY_WEB_PORT = 30707
+HISTORY_WEB_PORT = int(os.environ.get("ROUTER_SCAN_WEB_PORT", _deployment.get("web_port", 30707)))
+if not 1 <= HISTORY_WEB_PORT <= 65535:
+    raise ValueError("网页端口必须在 1 到 65535 之间")
+HISTORY_MAX_ENTRIES = int(_deployment.get("history_max_entries", 5000))
+if HISTORY_MAX_ENTRIES < 1:
+    raise ValueError("history_max_entries 必须为正整数")
 
 _apply_monitor_settings(_load_monitor_settings())

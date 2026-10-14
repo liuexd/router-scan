@@ -1,2 +1,2 @@
-beautifulsoup4
-requests
+# Core ZTE/OpenWrt collection uses Python 3.9+ standard library only.
+# Optional notifications/legacy helpers: pip install -r requirements-optional.txt

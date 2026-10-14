@@ -1,3 +1,4 @@
+from __future__ import annotations
 import time
 from typing import Dict, Optional
 
@@ -34,7 +35,7 @@ def _compute_dynamic_interval(primary_reason: Optional[str]) -> float:
 
 def main() -> None:
     prev_state = load_state()
-    cookie = read_cookie_from_file()
+    cookie = ""
     target_last: Optional[bool] = None
     second_target_last: Optional[bool] = None
     target_online_last: Optional[bool] = None
@@ -106,6 +107,10 @@ def _run_once(
     single_run: bool = False,
 ) -> tuple[str, Optional[bool], Optional[bool], Optional[bool], Optional[bool], Optional[bool], Optional[str]]:
     now_list, new_list, gone_list, cookie = scan_once(prev_state, cookie)
+    from .fetcher import SCAN_STATUS
+    if SCAN_STATUS.get("error"):
+        return (cookie, target_last, second_target_last, target_online_last,
+                target_suspect_last, None, None)
     print(f"\n[{ts()}] 扫描结果：{config.URL}")
     print_table("当前在线设备", now_list)
     print_table("新上线", new_list)
