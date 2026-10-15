@@ -13,4 +13,16 @@ target_history.json
 target_events.log
 target_status.log
 *.log
+deploy/temporary_router_key*
+deploy/packages/
+deploy/*Packages.gz
+deploy/installed-before.json
+zte_credentials.json
+zte_session.json
+notifications.json
+deployment.json
+runtime/
+deploy/remote.py
+deploy/package-plan.json
+deploy/*.tar.gz
 

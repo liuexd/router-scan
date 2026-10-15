@@ -1,4 +1,5 @@
-﻿import atexit
+from __future__ import annotations
+import atexit
 import json
 import threading
 import time
@@ -77,6 +78,7 @@ def prune_history(history: List[Dict[str, Any]]) -> None:
     from datetime import datetime, timedelta
     cutoff = datetime.now() - timedelta(days=config.TARGET_HISTORY_RETENTION_DAYS)
     history[:] = [entry for entry in history if (entry_ts := _parse_timestamp(entry.get("timestamp", ""))) and entry_ts >= cutoff]
+    del history[:-config.HISTORY_MAX_ENTRIES]
 
 
 def prune_recent_history(history: List[Dict[str, Any]]) -> None:
@@ -84,11 +86,13 @@ def prune_recent_history(history: List[Dict[str, Any]]) -> None:
     if cutoff is None:
         return
     history[:] = [entry for entry in history if (entry_ts := _parse_timestamp(entry.get("timestamp", ""))) and entry_ts >= cutoff]
+    del history[:-config.HISTORY_MAX_ENTRIES]
 
 
 def save_history(history: List[Dict[str, Any]]) -> None:
     try:
-        config.TARGET_HISTORY_FILE.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+        from .storage import write_private_json
+        write_private_json(config.TARGET_HISTORY_FILE, history)
     except Exception as exc:
         print(f"[{ts()}] 写入历史记录失败：{exc}")
 
@@ -202,6 +206,11 @@ class _HistoryRequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         params = parse_qs(parsed.query)
+        if path == "/diagnostics":
+            from .fetcher import SCAN_STATUS
+            from .notifications import webhook_status
+            self._json_response(dict(SCAN_STATUS, backend=config.ROUTER_BACKEND, url=config.URL, webhook=webhook_status()))
+            return
         if path.startswith("/data"):
             date_param = params.get("date", [None])[0]
             entries = filter_history_by_date(date_param) if date_param else snapshot()
@@ -226,13 +235,30 @@ class _HistoryRequestHandler(BaseHTTPRequestHandler):
                     }
                 )
             devices.sort(key=lambda item: (not item["online"], item["name"] or item["ip"] or item["mac"]))
-            self._json_response({"devices": devices})
+            from .fetcher import SCAN_STATUS
+            self._json_response({"devices": devices, "stale": bool(SCAN_STATUS.get("error")), "last_success": SCAN_STATUS.get("last_success")})
             return
         if path.startswith("/table"):
             self._set_headers(); self.wfile.write(self._render_table_page().encode("utf-8")); return
         if path.startswith("/history"):
             self._set_headers(); self.wfile.write(self._render_history_page().encode("utf-8")); return
-        self._set_headers(); self.wfile.write(self._render_monitor_page().encode("utf-8"))
+        page = self._render_monitor_page()
+        banner = '''<aside id="scanHealth" role="status" style="padding:10px 16px;margin:12px;border:1px solid #ddd;border-radius:6px">正在检查采集状态…</aside>
+<script>
+async function updateScanHealth() {
+  try {
+    const d = await (await fetch('/diagnostics', {cache:'no-store'})).json();
+    const el = document.getElementById('scanHealth');
+    el.textContent = d.error ? '采集失败：' + d.error :
+      '采集正常：' + d.device_count + ' 台设备；最近成功：' + (d.last_success || '等待首次采集');
+    el.style.color = d.error ? '#b42318' : '#067647';
+  } catch (_) { document.getElementById('scanHealth').textContent = '无法读取采集状态，请检查监控服务连接'; }
+}
+updateScanHealth(); setInterval(updateScanHealth, 5000);
+</script>'''
+        import re
+        page = re.sub(r'(<body[^>]*>)', lambda m: m.group(1) + banner, page, count=1)
+        self._set_headers(); self.wfile.write(page.encode("utf-8"))
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
@@ -1783,7 +1809,8 @@ def start_server() -> None:
     if not config.ENABLE_HISTORY_WEB or HISTORY_SERVER is not None:
         return
     try:
-        server = ThreadingHTTPServer(("0.0.0.0", config.HISTORY_WEB_PORT), _HistoryRequestHandler)
+        import os
+        server = ThreadingHTTPServer((config.WEB_BIND, config.HISTORY_WEB_PORT), _HistoryRequestHandler)
     except Exception as exc:
         print(f"[{ts()}] 启动历史页面服务失败：{exc}")
         return

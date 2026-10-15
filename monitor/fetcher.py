@@ -1,17 +1,14 @@
+from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-import requests
-import urllib3
-from bs4 import BeautifulSoup
-
 from . import config
 from .utils import ts
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+SCAN_STATUS = {"last_attempt": None, "last_success": None, "error": "", "device_count": 0}
 
 
 def _base_url() -> str:
@@ -43,6 +40,7 @@ def sha256_hex(text: str) -> str:
 
 
 def fetch_sid() -> tuple[str, dict]:
+    import requests
     session = requests.Session()
 
     token_resp = session.get(_token_url(), timeout=5, verify=False)
@@ -77,8 +75,7 @@ def refresh_cookie_from_router() -> str:
     try:
         cookie, login_body = fetch_sid()
         config.COOKIE_FILE.write_text(cookie + "\n", encoding="utf-8")
-        print(f"[{ts()}] 已刷新 Cookie: {cookie}")
-        print(f"[DEBUG] login_need_refresh={login_body.get('login_need_refresh')}, sess_token={login_body.get('sess_token')}")
+        print(f"[{ts()}] 已刷新路由器登录会话")
         return cookie
     except Exception as exc:  # noqa: BLE001
         print(f"[{ts()}] 刷新 Cookie 失败：{exc}")
@@ -110,10 +107,12 @@ def load_state() -> Dict[str, Dict]:
 
 
 def save_state(state: Dict[str, Dict]) -> None:
-    config.STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    from .storage import write_private_json
+    write_private_json(config.STATE_FILE, state)
 
 
 def fetch_url(url: str, cookie: Optional[str], extra_headers: Dict[str, str]) -> Tuple[str, Optional[str]]:
+    import requests
     import urllib3
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -169,15 +168,15 @@ def extract_clients_from_json(data: Any) -> List[Dict[str, str]]:
             name_key = next((k for k in node.keys() if k.lower() in ["name", "hostname", "devname", "device_name", "dev_name"]), None)
             rssi_key = next((k for k in node.keys() if k.lower() in RSSI_KEYS), None)
             snr_key = next((k for k in node.keys() if k.lower() in SNR_KEYS), None)
-            if mac_key and ip_key:
+            if mac_key:
                 name = str(node.get(name_key, "")) if name_key else ""
                 mac = norm_mac(str(node.get(mac_key, "")))
-                ip = str(node.get(ip_key, ""))
+                ip = str(node.get(ip_key, "")) if ip_key else ""
                 rssi = str(node.get(rssi_key, "")) if rssi_key else ""
                 snr = str(node.get(snr_key, "")) if snr_key else ""
                 tx_rate_bps = _extract_rate_bps(node, TX_RATE_KEYS, "tx")
                 rx_rate_bps = _extract_rate_bps(node, RX_RATE_KEYS, "rx")
-                if ip and mac:
+                if mac:
                     found.append(
                         {
                             "name": name,
@@ -203,7 +202,8 @@ def extract_clients_from_json(data: Any) -> List[Dict[str, str]]:
 
 
 def parse_clients_from_html(html: str) -> List[Dict[str, str]]:
-    soup = BeautifulSoup(html, "lxml")
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "html.parser")
     candidate_tables = []
     for table in soup.find_all("table"):
         headers = [th.get_text(strip=True) for th in table.find_all("th")]
@@ -314,41 +314,19 @@ def _normalize_rate_value(value: Any, key_name: str) -> Optional[float]:
     return max(0.0, number)
 
 
-def scan_once(
-    prev_state: Dict[str, Dict],
-    cookie: str,
-) -> Tuple[List[Dict[str, str]], List[Dict[str, str]], List[Dict[str, str]], str]:
-    def _fetch(active_cookie: str) -> List[Dict[str, str]]:
-        text, content_type = fetch_url(config.URL, active_cookie, config.EXTRA_HEADERS)
-        return parse_clients_auto(text, content_type)
-
+def scan_once(prev_state, cookie):
+    SCAN_STATUS["last_attempt"] = ts()
     try:
-        current = _fetch(cookie)
-    except requests.exceptions.HTTPError as error:
-        status_code = getattr(error.response, "status_code", None)
-        if status_code in {401, 403}:
-            print(f"[{ts()}] HTTP {status_code}：Cookie 可能失效，正在刷新并重抓")
-            cookie = refresh_cookie_from_router()
-            if not cookie:
-                return [], [], [], cookie
-            current = _fetch(cookie)
+        if config.ROUTER_BACKEND == "openwrt":
+            from .openwrt import fetch_clients
         else:
-            print(f"[{ts()}] HTTP 错误：{error}")
-            return [], [], [], cookie
-    except RuntimeError as error:
-        if "未找到包含客户端列表的表格" in str(error):
-            print(f"[{ts()}] 解析失败（可能跳回登录页），正在刷新 Cookie 并重抓")
-            cookie = refresh_cookie_from_router()
-            if not cookie:
-                return [], [], [], cookie
-            current = _fetch(cookie)
-        else:
-            print(f"[{ts()}] 解析异常：{error}")
-            return [], [], [], cookie
+            from .zte import fetch_clients
+        current = fetch_clients()
+        current_devices, new_devices, gone_devices = diff(prev_state, current)
+        save_state(prev_state)
+        SCAN_STATUS.update(last_success=ts(), error="", device_count=len(current))
+        return current_devices, new_devices, gone_devices, cookie
     except Exception as error:
-        print(f"[{ts()}] 抓取/解析失败：{error}")
+        SCAN_STATUS["error"] = str(error)
+        print(f"[{ts()}] 采集失败：{error}")
         return [], [], [], cookie
-
-    current_devices, new_devices, gone_devices = diff(prev_state, current)
-    save_state(prev_state)
-    return current_devices, new_devices, gone_devices, cookie

@@ -1,0 +1,9 @@
+{
+  "backend": "zte",
+  "web_bind": "127.0.0.1",
+  "web_port": 30707,
+  "runtime_dir": "runtime",
+  "tls_verify": true,
+  "http_timeout": 6,
+  "history_max_entries": 5000
+}

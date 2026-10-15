@@ -100,6 +100,18 @@ def evaluate_primary_status(device: Optional[Dict[str, str]], probe_state: Probe
     same_rssi_samples = _update_rssi_tracking(probe_state, rssi_value)
     tx_bps = _parse_rate_bps(device.get("tx_rate_bps", ""))
     rx_bps = _parse_rate_bps(device.get("rx_rate_bps", ""))
+    if config.ROUTER_BACKEND == "openwrt" and tx_bps is None and rx_bps is None:
+        probe_state.no_traffic_samples = 0
+        return _remember_status(
+            probe_state,
+            PrimaryStatus(
+                online=True, present=True, reason="associated",
+                summary="设备已关联；驱动未提供实际流量统计",
+                evidence=f"RSSI={rssi_value} dBm；依据无线关联和信号判断",
+                rssi_value=rssi_value, snr_value=snr_value,
+                same_rssi_samples=same_rssi_samples,
+            ),
+        )
     has_traffic = _has_traffic_activity(tx_bps, rx_bps)
     no_traffic_limit = config.NO_TRAFFIC_SAMPLE_LIMIT
     missing_tolerance = config.DEVICE_ABSENCE_TOLERANCE
