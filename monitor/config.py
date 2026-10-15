@@ -20,6 +20,7 @@ HTTP_TIMEOUT = float(_deployment.get("http_timeout", 6))
 if not 0 < HTTP_TIMEOUT <= 120:
     raise ValueError("http_timeout 必须大于 0 且不超过 120 秒")
 CREDENTIALS_FILE = CONFIG_DIR / "zte_credentials.json"
+NOTIFICATIONS_FILE = CONFIG_DIR / "notifications.json"
 
 # Push settings
 PUSHPLUS_TOKEN = ""

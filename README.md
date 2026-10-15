@@ -20,7 +20,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe main.py
 ```
 
-Linux 上把解释器路径换成 `.venv/bin/python`。核心无需 `pip install`。需要外部推送或旧版 HTML 解析辅助函数时才安装 `requirements-optional.txt`。
+Linux 上把解释器路径换成 `.venv/bin/python`。核心及企业微信兼容 Webhook 无需 `pip install`。需要 PushPlus 或旧版 HTML 解析辅助函数时才安装 `requirements-optional.txt`。
 
 初始化时选择采集模式，填写**完整管理地址**、管理凭据、网页监听地址及数据目录。例如浏览器访问 `http://192.168.1.1:8090/#/`，程序应填写 `http://192.168.1.1:8090`。`#/` 是浏览器路由，不属于请求地址；遗漏 `:8090` 会转为请求 80 端口。
 

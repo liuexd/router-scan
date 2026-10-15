@@ -208,7 +208,8 @@ class _HistoryRequestHandler(BaseHTTPRequestHandler):
         params = parse_qs(parsed.query)
         if path == "/diagnostics":
             from .fetcher import SCAN_STATUS
-            self._json_response(dict(SCAN_STATUS, backend=config.ROUTER_BACKEND, url=config.URL))
+            from .notifications import webhook_status
+            self._json_response(dict(SCAN_STATUS, backend=config.ROUTER_BACKEND, url=config.URL, webhook=webhook_status()))
             return
         if path.startswith("/data"):
             date_param = params.get("date", [None])[0]

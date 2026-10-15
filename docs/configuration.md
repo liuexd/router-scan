@@ -69,4 +69,14 @@ RSSI 阈值另存于 `rssi_threshold.json`。现有算法以信号绝对值判�
 
 ## 可选推送
 
-默认关闭外部推送；空 token 或空 Webhook 地址不会发送请求。要启用，请安装 `requirements-optional.txt`，并按现有 `monitor/config.py` 的推送字段配置。当前推送凭据仍采用源码中的字段，不支持初始化向导管理；不要将真实推送字段提交到 GitHub。OpenWrt 可按固件软件源安装 `python3-requests`，HTTPS 推送还需要 SSL 标准库及证书。
+默认关闭外部推送，需要在网页打开“推送总开关”，并启用对应的状态或疑似下线通知。程序在状态变化时发送，首次初始化和每次采样不会重复发送。
+
+企业微信兼容 Webhook 使用 Python 标准库，不需要 `requests`。在配置目录创建私有文件 `notifications.json`：
+
+```json
+{"webhook_url": "填写完整机器人 Webhook 地址"}
+```
+
+POSIX 系统将文件权限设为 `0600`；该文件已忽略，不要提交到 GitHub。程序每次发送时读取地址，无需修改源码。HTTPS 仍需要 SSL 标准库及受信任证书，OpenWrt 可安装 `python3-openssl`。返回 HTTP 200 且 `errcode=0` 才记录为平台已接受；这不保证手机系统已经弹出通知。`/diagnostics` 的 `webhook` 字段只提供配置状态、最近尝试/成功时间和错误，不返回完整地址。默认不跟随 Webhook 重定向，也不把包含 key 的网络异常原文写入日志。
+
+PushPlus 仍需 `requirements-optional.txt` 中的 requests，以及 `monitor/config.py` 的相关推送字段；不要将真实 token 提交到 GitHub。其他平台若返回格式不兼容企业微信 `errcode`，需单独适配，不能只替换 URL。

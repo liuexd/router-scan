@@ -19,6 +19,7 @@ deploy/*Packages.gz
 deploy/installed-before.json
 zte_credentials.json
 zte_session.json
+notifications.json
 deployment.json
 runtime/
 deploy/remote.py
